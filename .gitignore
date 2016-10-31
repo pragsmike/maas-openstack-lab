@@ -1,4 +1,5 @@
 config
+config-hosts
 /tmp
 /target
 /.nrepl-port

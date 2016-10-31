@@ -7,12 +7,13 @@
 
 (def rack-id "4y3h7n")
 
-(def host-octets
-  {
-   "labrat-a" 10
-   "labrat-b" 11
-   "labrat-c" 12
-   "labrat-d" 13})
+;; config-hosts is expected to contain such as this:
+;; {
+;;  "labrat-a" 10
+;;  "labrat-b" 11
+;;  }
+;;
+(defn host-octets [] (read-string (slurp "config-hosts")))
 
 (def spaces
   {"unused" nil
@@ -31,7 +32,7 @@
 (defn all-vlan-tags [] (filter some? (vals spaces)))
 (defn managed-subnets [] (filter is-subnet-managed? (all-subnets)))
 
-(defn managed-hostnames [] (keys host-octets))
+(defn managed-hostnames [] (keys (host-octets)))
 
 ;;;----------------------------------------------------------------------
 
@@ -78,7 +79,7 @@
   (get (vlan-tag-to-id-map) vlan-tag))
 
 (defn hostname->octet [hostname]
-  (get host-octets hostname))
+  (get (host-octets) hostname))
 
 
 
@@ -114,6 +115,10 @@
   (format "interface link-subnet %s %s.%d subnet=cidr:10.%d.0.0/20 mode=static ip_address=10.%d.0.%d"
           node-maas-id parent-nic-name vlan-tag vlan-tag vlan-tag node-octet))
 
+(defn cmd-unlink-subnet [node-maas-id nic-name link-id]
+  (format "interface unlink-subnet %s %s id=%d"
+          node-maas-id nic-name link-id))
+
 
 (defn cmds-create-spaces []
   (map cmd-create-space (all-spaces)))
@@ -143,6 +148,12 @@
     (for [vlan-tag (all-vlan-tags)]
       (cmd-link-subnet node-maas-id parent-nic-name node-octet vlan-tag))))
 
+(defn cmds-unlink-node-subnet [hostname]
+  (let [node-maas-id (get (node-to-id-map) hostname)
+        vlan-nics (hostname-fabric->vlan-nics hostname "private")]
+    (for [nic vlan-nics]
+      (cmd-unlink-subnet node-maas-id (:name nic)  (-> nic :links first :id)))))
+
 (defn cmds-create-vlan-interfaces []
   (apply concat (map cmds-create-node-vlan-interfaces (managed-hostnames))))
 (defn cmds-delete-vlan-interfaces []
@@ -150,11 +161,15 @@
 
 (defn cmds-link-subnets []
   (apply concat (map cmds-link-node-subnet (managed-hostnames))))
+(defn cmds-unlink-subnets []
+  (apply concat (map cmds-unlink-node-subnet (managed-hostnames))))
 
 (defn cmds [what]
   (filter some?
           (case what
-            :scorch (cmds-delete-vlan-interfaces)
+            :scorch (concat
+                     (cmds-unlink-subnets)
+                     (cmds-delete-vlan-interfaces))
              (concat (cmds-create-spaces)
                     (cmds-update-subnets)
                     (cmds-create-ipranges)
