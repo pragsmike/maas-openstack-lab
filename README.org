@@ -1,0 +1,116 @@
+#+TITLE: MAAS/Juju for OpenStack lab
+
+These notes and scripts help automate some of the steps in
+[[http://blog.naydenov.net/2016/01/maas-setup-deploying-openstack-on-maas-1-9-with-juju/][Dimiter's most excellent blog posts]] that describe how to
+set up an environment to deploy OpenStack using Juju.
+
+This includes my notes for creating a pet MAAS controller that
+runs on a dedicated Intel NUC5.
+
+The MAAS controller is an Intel NUC5 with 8G RAM, 250GB disk.
+The metal runs Ubuntu 16.04 with LXD installed.
+
+It is on all the time, and runs network infrastructure
+services like NTP, DNS, and radvd.
+It also runs maas in an LXD container.
+
+* Installing the OS on the NUC
+
+If you don't already have another MAAS,
+install Ubuntu 16 on the NUC hardware however you like.
+
+** Alternative: If you have another MAAS already
+
+I happened to have a MAAS controller handy already, so I used it to install
+the OS onto the NUC.  First I used [[file:maas-chain.sh][maas-chain.sh]] to specify the disk
+paritions I wanted.
+
+Set the new maas NUC to boot from its local disk.
+
+
+* Installing MAAS on NUC
+
+If you don't already have another MAAS,
+you can try the script [[maas-lxd.org][maas-lxd]] to prepare the NUC for running the MAAS container.
+
+Then follow the instructions at [[http://maas.ubuntu.com/docs/install.html#installing-maas-in-a-lxc-container][Installing MAAS in LXC instructions]].
+
+
+** Alternative: Copying the MAAS container from laptop to NUC
+
+If that other MAAS controller happens to be an LXD container,
+you can copy it to the new NUC.
+I had a MAAS container already on my laptop.
+
+On NUC:
+
+#+BEGIN_SRC sh
+apt install criu
+lxc config set core.https_address [::]:8443
+lxc config set core.trust_password secret
+#+END_SRC
+
+On laptop:
+#+BEGIN_SRC sh
+apt install criu
+lxc remote add nuc https://nuc:8443/
+lxc profile copy maas nuc:maas
+#+END_SRC
+
+For some reason, I've had lxc commands fail when using the implicit local address,
+so I add the server's own address as a "remote".
+lxc remote add here https://laptop:8443/
+
+Then export the image to nuc:
+#+BEGIN_SRC sh
+lxc publish here:maas nuc: --force --alias maas
+#+END_SRC
+
+
+* Running the MAAS container
+
+On nuc, make sure the br-admin bridge is present, because
+the profile refers to it.
+
+Launch the new image.
+
+#+BEGIN_SRC sh
+lxc launch maas maas -p maas
+#+END_SRC
+
+That brought up a container ok, but the admin interface, while present,
+didn't have an IP address.  I did =ifup admin= and then it had IPv4 but not 6.
+
+=maas-regiond= was running, but =maas-rackd= wasn't.  I had to start it.
+
+#+BEGIN_SRC sh
+ifup admin
+systemctl start maas-rackd
+#+END_SRC
+
+* Networks for OpenStack
+
+MAAS network architecture changed a lot from 1.9 to 2.0.
+[[http://blog.naydenov.net/2016/01/maas-setup-deploying-openstack-on-maas-1-9-with-juju/][Dimiter's blog posts]] give both the MAAS 1.9 and MAAS 2.0 commands to setup up the VLANs,
+giving the gateway address, DNS, and reserved IP ranges (both static and dynamic).
+
+| space            | VLAN |
+|------------------+------|
+| unused           |      |
+| admin-api        |  150 |
+| internal-api     |  100 |
+| public-api       |   50 |
+| compute-data     |  250 |
+| compute-external |   99 |
+| storage-data     |  200 |
+| storage-cluster  |   30 |
+
+** Fabrics
+
+A Fabric is a group of VLANs (layer 2).
+
+MAAS sets up a fabric for each physical NIC it finds on the rack controller.
+
+** Spaces
+
+A Space is a group of Subnets (layer 3).

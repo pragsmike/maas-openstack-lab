@@ -1,0 +1,8 @@
+config
+/tmp
+/target
+/.nrepl-port
+.nrepl-history
+*-
+*~
+*.swp
