@@ -45,10 +45,16 @@
 ; maas maas nodes read
 (defn read-nodes []
   (json/read (io/reader (io/resource "nodes.json")) :key-fn keyword))
+(defn read-fabrics []
+  (json/read (io/reader (io/resource "fabrics.json")) :key-fn keyword))
 
+;;;----------------------------------------------------------------------
 
 (defn space-to-id-map []
   (apply hash-map (flatten (map (juxt :name :id)  (read-spaces)))))
+
+(defn fabric-to-id-map []
+  (apply hash-map (flatten (map (juxt :name :id)  (read-fabrics)))))
 
 (defn vlan-tag-to-id-map []
   (apply hash-map (flatten (map (juxt :vid :id)  (read-vlans)))))
@@ -75,6 +81,9 @@
 (defn get-nic-name-in-fabric [hostname fabric-name]
   (:name (hostname-fabric->nic hostname fabric-name)))
 
+(defn fabric->id [fabric-name]
+  (get (fabric-to-id-map) fabric-name))
+
 (defn vlan-tag->maas-id [vlan-tag]
   (get (vlan-tag-to-id-map) vlan-tag))
 
@@ -89,21 +98,24 @@
   (format "spaces create name=%s" name))
 
 (defn cmd-update-subnet [space-name]
-  (let [vlan-number (get spaces space-name)
+  (let [vlan-tag (get spaces space-name)
         subnet-name space-name
         space-number (get (space-to-id-map) space-name)]
-    (if vlan-number
-      (format "subnet update vlan:%s name=%s space=%d gateway_ip=10.%s.0.1" vlan-number space-name space-number vlan-number)
+    (if vlan-tag
+      (format "subnet update vlan:%s name=%s space=%d gateway_ip=10.%s.0.1" vlan-tag space-name space-number vlan-tag)
       nil)))
 
 (defn cmd-create-iprange [subnet-name]
   (format "ipranges create type=dynamic start_ip=10.%d.0.40 end_ip=10.%d.0.90" (get spaces subnet-name) (get spaces subnet-name)))
 
 (defn cmd-update-vlan [space-name]
-  (let [vlan-number (get spaces space-name)
-        fabric-id 41
+  (let [vlan-tag (get spaces space-name)
+        fabric-id (fabric->id "private")
         subnet-name space-name]
-    (format "vlan update %d %d name=%s dhcp_on=True primary_rack=%s" fabric-id vlan-number subnet-name rack-id)))
+    (format "vlan update %d %d name=%s dhcp_on=True primary_rack=%s" fabric-id vlan-tag subnet-name rack-id)))
+
+(defn cmd-update-interface [node-maas-id nic-maas-id new-interface-name]
+  (format "interface update %s %d name=%s" node-maas-id nic-maas-id new-interface-name))
 
 (defn cmd-interface-create-vlan [node-maas-id parent-nic-maas-id vlan-maas-id]
   (format  "interfaces create-vlan %s vlan=%d parent=%d" node-maas-id vlan-maas-id parent-nic-maas-id))
@@ -116,8 +128,7 @@
           node-maas-id parent-nic-name vlan-tag vlan-tag vlan-tag node-octet))
 
 (defn cmd-unlink-subnet [node-maas-id nic-name link-id]
-  (format "interface unlink-subnet %s %s id=%d"
-          node-maas-id nic-name link-id))
+  (format "interface unlink-subnet %s %s id=%d" node-maas-id nic-name link-id))
 
 
 (defn cmds-create-spaces []
@@ -128,6 +139,11 @@
   (map cmd-create-iprange (managed-subnets)))
 (defn cmds-update-vlans []
   (map cmd-update-vlan (managed-subnets)))
+
+(defn cmd-update-node-interface [hostname]
+  (cmd-update-interface (get (node-to-id-map) hostname)
+                        (get-nic-id-in-fabric hostname "private")
+                        "eth1"))
 
 (defn cmds-create-node-vlan-interfaces [hostname]
   (let [node-maas-id (get (node-to-id-map) hostname)
@@ -154,6 +170,9 @@
     (for [nic vlan-nics]
       (cmd-unlink-subnet node-maas-id (:name nic)  (-> nic :links first :id)))))
 
+(defn cmds-update-interfaces []
+  (map cmd-update-node-interface (managed-hostnames)))
+
 (defn cmds-create-vlan-interfaces []
   (apply concat (map cmds-create-node-vlan-interfaces (managed-hostnames))))
 (defn cmds-delete-vlan-interfaces []
@@ -170,7 +189,15 @@
             :scorch (concat
                      (cmds-unlink-subnets)
                      (cmds-delete-vlan-interfaces))
-             (concat (cmds-create-spaces)
+            :one    (concat  (cmds-update-interfaces)
+                             ["fabrics read >tmp/fabrics.json"])
+            :two    (concat (cmds-create-spaces)
+                            )
+
+            :three  ["spaces read >tmp/spaces.json"
+                     "nodes read >tmp/nodes.json"]
+
+            (concat
                     (cmds-update-subnets)
                     (cmds-create-ipranges)
                     (cmds-update-vlans)

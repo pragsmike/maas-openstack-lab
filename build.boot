@@ -8,4 +8,6 @@
  '[soup.main      :refer [main]]
 )
 
-(deftask run [] (main :all))
+(deftask run
+  "Generate MAAS commands for a given stage of the installation."
+  [s stage VAL kw] (main stage))

@@ -2,17 +2,36 @@
 
 These notes and scripts help automate some of the steps in
 [[http://blog.naydenov.net/2016/01/maas-setup-deploying-openstack-on-maas-1-9-with-juju/][Dimiter's most excellent blog posts]] that describe how to
-set up an environment to deploy OpenStack using Juju.
+set up a lab environment to deploy OpenStack using Juju.
 
 This includes my notes for creating a pet MAAS controller that
 runs on a dedicated Intel NUC5.
 
+Here also is a utility to generate the commands to configure the
+physical network and storage on the MAAS-provisioned machines before
+deployment (post-commissioning).
+
+To run the utilities, you'll need to install [[https://github.com/boot-clj/boot#install][boot]].
+
+* Requirements
+
+See [[http://blog.naydenov.net/2015/11/deploying-openstack-on-maas-1-9-with-juju-hardware-setup/][Dimiter's blog post, part 2]] for discussion of the hardware required,
+but briefly:
+
+| laptop             | a machine to drive the whole show |
+| two low-end NUCs   | MAAS controller, Juju controller  |
+| faster/bigger NUCs | OpenStack applications            |
+
+To run the utilities in this repository, you'll need to install [[https://github.com/boot-clj/boot#install][boot]] on the laptop.
+
 The MAAS controller is an Intel NUC5 with 8G RAM, 250GB disk.
-The metal runs Ubuntu 16.04 with LXD installed.
+It runs Ubuntu 16.04, with LXD installed.
 
 It is on all the time, and runs network infrastructure
 services like NTP, DNS, and radvd.
 It also runs maas in an LXD container.
+
+
 
 * Installing the OS on the NUC
 
