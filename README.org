@@ -31,6 +31,16 @@ It is on all the time, and runs network infrastructure
 services like NTP, DNS, and radvd.
 It also runs maas in an LXD container.
 
+* Gotchas
+
+Be sure to rename the ethernet interface to have short names, or they'll
+fail to come up if the name is longer than 15 characters.  Under MAAS,
+the symptom is that the machine will fail to deploy when VLAN interfaces
+are defined on it.
+
+This happens because the USB Ethernet NICs often show up as interfaces
+with very long names.  When you create the VLAN child on it, the VLAN
+tag appended to the name exceeds the 15-character limit.
 
 
 * Installing the OS on the NUC
@@ -107,6 +117,7 @@ ifup admin
 systemctl start maas-rackd
 #+END_SRC
 
+
 * Networks for OpenStack
 
 MAAS network architecture changed a lot from 1.9 to 2.0.
@@ -133,3 +144,44 @@ MAAS sets up a fabric for each physical NIC it finds on the rack controller.
 ** Spaces
 
 A Space is a group of Subnets (layer 3).
+
+* Generating commands for MAAS
+
+The utility in this repo is what I used to generate MAAS commands.
+It assumes that you're following the conventions in Dimiter's posts.
+
+The utility is very simple-minded.  It's intended to save you some work
+in looking up the internal maas ids for fabrics, vlans, and interfaces,
+rather than as a full automation tool.
+
+You invoke it via command-line, and it emits some shell
+commands that you can run directly or edit if you like.
+It takes an argument that tells it which "phase" of the installation
+you need the commands for.  Most of the commands are just calls to the MAAS CLI,
+but some of them copy its JSON output into files so later phases can get them.
+
+It's usually safe to issue the generated commands even if they've
+already been done before.  For instance, if you issue the commands that
+create objects, you'll get warnings that the objects already exist, but
+it won't hurt anything.  (Does that count as idempotency?)
+
+You need to create a file named =config-hosts= in the top-level of this repo,
+which contains a map of the hostnames of your payload nodes and an integer
+that will become the last octet in IP addresses for that node.
+Don't include the maas controller or juju controller in this list.
+
+Here's an example:
+
+#+BEGIN_SRC clojure
+{
+  "labrat-a" 10
+  "labrat-b" 11
+  "labrat-c" 12
+  "labrat-d" 13
+}
+#+END_SRC
+
+
+#+BEGIN_SRC sh
+boot run -s one
+#+END_SRC

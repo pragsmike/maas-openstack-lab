@@ -3,8 +3,6 @@
   (:require [clojure.java.io :as io]
             [clojure.data.json :as json]))
 
-; http://maas.io/docs/en/manage-cli-common#create-a-reserved-ip-range
-
 (def rack-id "4y3h7n")
 
 ;; config-hosts is expected to contain such as this:
@@ -31,6 +29,7 @@
 (defn all-subnets [] (filter is-space-subnet? (keys spaces)))
 (defn all-vlan-tags [] (filter some? (vals spaces)))
 (defn managed-subnets [] (filter is-subnet-managed? (all-subnets)))
+(defn managed-vlan-tags [] (map spaces (managed-subnets)))
 
 (defn managed-hostnames [] (keys (host-octets)))
 
@@ -39,9 +38,6 @@
 ; maas maas spaces read
 (defn read-spaces []
   (json/read (io/reader (io/resource "spaces.json")) :key-fn keyword))
-; maas maas vlans read 41
-(defn read-vlans []
-  (json/read (io/reader (io/resource "vlans.json")) :key-fn keyword))
 ; maas maas nodes read
 (defn read-nodes []
   (json/read (io/reader (io/resource "nodes.json")) :key-fn keyword))
@@ -50,6 +46,11 @@
 
 ;;;----------------------------------------------------------------------
 
+(defn get-fabric [fabric-name]
+  (first (clojure.set/select #(= fabric-name (:name %)) (apply hash-set (read-fabrics)))))
+(defn get-fabric-vlans [fabric-name]
+  (:vlans  (get-fabric fabric-name)))
+
 (defn space-to-id-map []
   (apply hash-map (flatten (map (juxt :name :id)  (read-spaces)))))
 
@@ -57,7 +58,7 @@
   (apply hash-map (flatten (map (juxt :name :id)  (read-fabrics)))))
 
 (defn vlan-tag-to-id-map []
-  (apply hash-map (flatten (map (juxt :vid :id)  (read-vlans)))))
+  (apply hash-map (flatten (map (juxt :vid :id)  (get-fabric-vlans "private")))))
 
 (defn node-to-id-map []
   (apply hash-map (flatten (map (juxt :hostname :system_id)  (read-nodes)))))
@@ -161,7 +162,7 @@
   (let [node-maas-id (get (node-to-id-map) hostname)
         parent-nic-name (get-nic-name-in-fabric hostname "private")
         node-octet (hostname->octet hostname)]
-    (for [vlan-tag (all-vlan-tags)]
+    (for [vlan-tag (managed-vlan-tags)]
       (cmd-link-subnet node-maas-id parent-nic-name node-octet vlan-tag))))
 
 (defn cmds-unlink-node-subnet [hostname]
@@ -186,23 +187,25 @@
 (defn cmds [what]
   (filter some?
           (case what
-            :scorch (concat
+            :undo   (concat
                      (cmds-unlink-subnets)
                      (cmds-delete-vlan-interfaces))
-            :one    (concat  (cmds-update-interfaces)
-                             ["fabrics read >tmp/fabrics.json"])
-            :two    (concat (cmds-create-spaces)
-                            )
+            :one    ["mkdir -p tmp"
+                     "nodes read >tmp/nodes.json"
+                     "fabrics read >tmp/fabrics.json"]
+            :two    (concat  (cmds-update-interfaces))
+            :three  (concat (cmds-create-spaces))
 
-            :three  ["spaces read >tmp/spaces.json"
+            :four   ["spaces read >tmp/spaces.json"
                      "nodes read >tmp/nodes.json"]
 
-            (concat
-                    (cmds-update-subnets)
-                    (cmds-create-ipranges)
-                    (cmds-update-vlans)
-                    (cmds-create-vlan-interfaces)
-                    (cmds-link-subnets)))))
+            :five   (concat
+                     (cmds-update-subnets)
+                     (cmds-create-ipranges)
+                     (cmds-update-vlans)
+                     (cmds-create-vlan-interfaces)
+                     (cmds-link-subnets))
+            ["Specify one of: one two three four five undo"])))
 
 
 ;;;----------------------------------------------------------------------
