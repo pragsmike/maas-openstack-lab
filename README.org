@@ -27,13 +27,15 @@ To run the utilities in this repository, you'll need to install [[https://github
 The MAAS controller is an Intel NUC5 with 8G RAM, 250GB disk.
 It runs Ubuntu 16.04, with LXD installed.
 
-It is on all the time, and runs network infrastructure
-services like NTP, DNS, and radvd.
-It also runs maas in an LXD container.
+It is on all the time, and runs maas in an LXD container.
+I also use it to run network infrastructure services like NTP, DNS, and
+radvd.
 
 * Gotchas
 
-Be sure to rename the ethernet interface to have short names, or they'll
+The utility generates commands to rename the interfaces to avoid this problem.
+
+If you don't rename the ethernet interface to have short names, they will
 fail to come up if the name is longer than 15 characters.  Under MAAS,
 the symptom is that the machine will fail to deploy when VLAN interfaces
 are defined on it.
